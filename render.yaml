@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: cam-phish
+    env: docker
+    region: oregon
+    plan: free
+    branch: main
+    healthCheckPath: /
+    numInstances: 1
